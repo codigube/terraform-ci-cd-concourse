@@ -53,7 +53,7 @@ resources:
   type: pull-request
   check_every: 10s
   source:
-    repository: codigube/terraform-cicd-concourse
+    repository: codigube/terraform-ci-cd-concourse
     access_token: ((github-access-token))
     ignore_paths:
       -  ".ci/"
