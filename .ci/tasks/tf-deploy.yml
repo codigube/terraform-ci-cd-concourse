@@ -1,0 +1,28 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: { repository: hashicorp/terraform, tag: '0.13.5'}
+
+inputs:
+  - name: source-code
+
+params:
+  AWS_ACCESS_KEY:
+  AWS_SECRET_KEY:
+  AWS_SESSION_TOKEN:
+  AWS_REGION: eu-west-1
+  BUILD_STAGE:
+
+run:
+  path: sh
+  args:
+  - -exc
+  - |
+    set -eo pipefail
+    terraform version
+    cd source-code/terraform/${BUILD_STAGE}/demo-cicd
+    terraform init -upgrade=true
+    terraform plan
+    terraform apply -auto-approve

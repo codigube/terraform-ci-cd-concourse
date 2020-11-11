@@ -1,0 +1,34 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: { repository: hashicorp/terraform, tag: '0.13.5'}
+
+inputs:
+  - name: source-code
+
+params:
+  AWS_ACCESS_KEY:
+  AWS_SECRET_KEY:
+  AWS_SESSION_TOKEN:
+  AWS_REGION: eu-west-1
+  BUILD_STAGE:
+
+run:
+  path: sh
+  args:
+  - -exc
+  - |
+    set -eo pipefail
+    terraform version
+    ROOT_DIR=$(pwd)
+    cd source-code/terraform/${BUILD_STAGE}/demo-cicd
+    echo "Terraform Plan against **${BUILD_STAGE}** environment" >> $ROOT_DIR/terraform-output/plan.txt
+    terraform init -upgrade=true -no-color | tee -a 2>> $ROOT_DIR/terraform-output/plan.txt
+    echo "\`\`\`bash" >> $ROOT_DIR/terraform-output/plan.txt
+    terraform plan -no-color | tee -a $ROOT_DIR/terraform-output/plan.txt
+    echo "\`\`\`" >> plan.txt
+
+outputs:
+  - name: terraform-output

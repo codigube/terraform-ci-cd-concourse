@@ -1,0 +1,240 @@
+---
+config:
+  dev-config: &dev-config
+    AWS_ACCESS_KEY: ((aws-access-key))
+    AWS_SECRET_KEY: ((aws-secret-key))        
+    BUILD_STAGE: "dev"
+
+  stage-config: &stage-config
+    AWS_ACCESS_KEY: ((aws-access-key))
+    AWS_SECRET_KEY: ((aws-secret-key))        
+    BUILD_STAGE: "stage"
+  
+  slack: &slack-config
+    channel: '#ta-aws-poc-ops'
+
+  failure: &slack-failure
+    put: notify-slack
+    params:
+      <<: *slack-config
+      alert_type: failed
+
+  success: &slack-success
+    put: notify-slack
+    params:
+      <<: *slack-config
+      alert_type: success
+
+groups:
+  - name: PR
+    jobs:
+      - terraform-pr
+      - ignore-pr
+
+  - name: Master
+    jobs:
+      - terraform-master
+      - terraform-deploy-dev
+      - terraform-deploy-stage
+
+resource_types:
+  - name: pull-request
+    type: docker-image
+    source:
+      repository: teliaoss/github-pr-resource
+  - name: slack-notification
+    type: docker-image
+    source:
+      repository: arbourd/concourse-slack-alert-resource
+      tag: latest
+
+resources:
+- name: pull-request
+  type: pull-request
+  check_every: 10s
+  source:
+    repository: codigube/terraform-cicd-concourse
+    access_token: ((github-access-token))
+    ignore_paths:
+      -  ".ci/"
+
+- name: pull-request-ignore
+  type: pull-request
+  check_every: 10s
+  source:
+    repository: codigube/terraform-cicd-concourse
+    access_token: ((github-access-token))
+    ignore_paths: 
+      - "terraform/"
+
+- name: master
+  type: git
+  check_every: 10s
+  source:
+    uri: https://github.com/codigube/terraform-cicd-concourse.git
+    branch: main
+    ignore_paths: 
+      -  ".ci/"
+
+- name: notify-slack
+  type: slack-notification
+  source:
+      url: ((slack-web-hook))
+  
+jobs:
+  - name: terraform-pr
+    serial: true
+    plan:
+      - get: pull-request
+        trigger: true
+
+      - put: pull-request
+        params:
+          path: pull-request
+          status: pending
+
+      - task: format-check-tf          
+        file: pull-request/.ci/tasks/tf-format.yml
+        input_mapping: { source-code: pull-request }
+        params: *dev-config
+        on_failure:
+          do:
+          - put: pull-request
+            params:
+              path: pull-request
+              comment_file: terraform-output/fmt.txt
+          - put: pull-request
+            params:
+              path: pull-request
+              status: failure
+              
+      - in_parallel:
+
+        - task: plan-tf-dev          
+          file: pull-request/.ci/tasks/tf-plan.yml
+          input_mapping: { source-code: pull-request }
+          params: *dev-config
+          on_failure:
+            do:
+            - put: pull-request
+              params:
+                path: pull-request
+                comment_file: terraform-output/plan.txt
+            - put: pull-request
+              params:
+                path: pull-request
+                status: failure
+          on_success:
+            do:
+            - put: pull-request
+              params:
+                path: pull-request
+                comment_file: terraform-output/plan.txt
+
+        - task: plan-tf-stage         
+          file: pull-request/.ci/tasks/tf-plan.yml
+          input_mapping: { source-code: pull-request }
+          params: *stage-config
+          on_failure:
+            do:
+            - put: pull-request
+              params:
+                path: pull-request
+                comment_file: terraform-output/plan.txt
+            - put: pull-request
+              params:
+                path: pull-request
+                status: failure
+          on_success:
+            do:
+            - put: pull-request
+              params:
+                path: pull-request
+                comment_file: terraform-output/plan.txt
+            - put: pull-request
+              params:
+                path: pull-request
+                status: success
+
+  - name: ignore-pr
+    serial: true
+    plan:
+      - get: pull-request-ignore
+        trigger: true
+
+      - put: pull-request-ignore
+        params:
+          path: pull-request-ignore
+          status: success
+
+  - name: terraform-master
+    serial: true
+    plan:
+      - get: master
+        trigger: true
+
+      - in_parallel:
+
+        - task: plan-tf-dev        
+          file: master/.ci/tasks/tf-plan.yml
+          input_mapping: { source-code: master }
+          params: *dev-config
+          on_failure:
+            *slack-failure
+
+        - task: plan-tf-stage       
+          file: master/.ci/tasks/tf-plan.yml
+          input_mapping: { source-code: master }
+          params: *stage-config
+          on_failure:
+            *slack-failure
+      
+      - *slack-success
+
+  - name: terraform-deploy-dev
+    serial: true
+    plan:
+      - get: master
+        trigger: true
+        passed:
+          - terraform-master
+
+      - task: plan-tf          
+        file: master/.ci/tasks/tf-plan.yml
+        input_mapping: { source-code: master }
+        params: *dev-config
+        on_failure:
+          *slack-failure
+
+      - task: deploy-tf          
+        file: master/.ci/tasks/tf-deploy.yml
+        input_mapping: { source-code: master }
+        params: *dev-config
+        on_failure:
+          *slack-failure
+      
+      - *slack-success
+
+  - name: terraform-deploy-stage
+    serial: true
+    plan:
+      - get: master
+        trigger: false
+        passed:
+          - terraform-deploy-dev
+
+      - task: plan-tf          
+        file: master/.ci/tasks/tf-plan.yml
+        input_mapping: { source-code: master }
+        params: *stage-config
+        on_failure:
+          *slack-failure
+
+      - task: deploy-tf          
+        file: master/.ci/tasks/tf-deploy.yml
+        input_mapping: { source-code: master }
+        params: *stage-config
+        on_failure:
+          *slack-failure
+      
+      - *slack-success

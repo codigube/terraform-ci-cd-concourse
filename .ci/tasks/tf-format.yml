@@ -1,0 +1,30 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: { repository: hashicorp/terraform, tag: '0.13.5'}
+
+inputs:
+  - name: source-code
+
+params:
+  AWS_ACCESS_KEY:
+  AWS_SECRET_KEY:
+  AWS_SESSION_TOKEN:
+  AWS_REGION: eu-west-1
+  BUILD_STAGE:
+
+run:
+  path: sh
+  args:
+  - -exc
+  - |
+    set -eo pipefail
+    terraform version
+    ROOT_DIR=$(pwd)
+    cd source-code/terraform
+    echo "Unformatted terraform files:" >> $ROOT_DIR/terraform-output/fmt.txt
+    terraform fmt -recursive -check | tee -a $ROOT_DIR/terraform-output/fmt.txt
+outputs:
+  - name: terraform-output
