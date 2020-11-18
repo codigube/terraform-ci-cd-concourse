@@ -28,7 +28,7 @@ run:
     terraform init -upgrade=true -no-color | tee -a 2>> $ROOT_DIR/terraform-output/plan.txt
     echo "\`\`\`bash" >> $ROOT_DIR/terraform-output/plan.txt
     terraform plan -no-color | tee -a $ROOT_DIR/terraform-output/plan.txt
-    echo "\`\`\`" >> plan.txt
+    echo "\`\`\`" >> $ROOT_DIR/terraform-output/plan.txt
 
 outputs:
   - name: terraform-output
